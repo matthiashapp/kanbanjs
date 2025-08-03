@@ -1,0 +1,17 @@
+{
+  "name": "kanban-js",
+  "version": "1.0.0",
+  "description": "A simple Kanban board application",
+  "main": "index.html",
+  "scripts": {
+    "minify": "html-minifier-terser --input-dir . --output-dir dist --file-ext html --remove-comments --remove-optional-tags --remove-redundant-attributes --remove-script-type-attributes --remove-style-link-type-attributes --use-short-doctype --collapse-whitespace --minify-css --minify-js",
+    "build": "npm run minify",
+    "deploy": "npm run build && ./deploy.sh"
+  },
+  "devDependencies": {
+    "html-minifier-terser": "^7.2.0"
+  },
+  "keywords": ["kanban", "board", "productivity"],
+  "author": "",
+  "license": "MIT"
+}

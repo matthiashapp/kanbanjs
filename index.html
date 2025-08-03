@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban Board</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Use Inter font */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar for a cleaner look */
+        .kanban-board::-webkit-scrollbar {
+            height: 8px;
+        }
+        .kanban-board::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        .kanban-board::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        .kanban-board::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        /* Style for the card being dragged */
+        .card.dragging {
+            opacity: 0.5;
+            transform: rotate(2deg);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        /* Hide the delete button by default and show on card hover */
+        .card .delete-card-btn {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out;
+        }
+        .card:hover .delete-card-btn {
+            visibility: visible;
+            opacity: 1;
+        }
+        /* Styles for the modal */
+        .modal-backdrop {
+            transition: opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900">Kanban Board</h1>
+            <p class="text-gray-600 mt-2">Organize your workflow with drag-and-drop simplicity.</p>
+        </header>
+        
+        <div class="flex justify-center mb-8 gap-4">
+            <button id="add-lane-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                &#43; Add New Lane
+            </button>
+            <button id="export-csv-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                📋 Copy CSV to Clipboard
+            </button>
+            <button id="export-sheet-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                📊 Copy Sheet Format
+            </button>
+        </div>
+
+        <!-- Kanban Board Container -->
+        <div id="kanban-board" class="kanban-board flex gap-6 pb-4 overflow-x-auto min-h-[60vh]">
+            <!-- Lanes will be dynamically inserted here -->
+        </div>
+    </div>
+
+    <!-- Modal for input (replaces prompt) -->
+    <div id="input-modal" class="modal-backdrop fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden">
+        <div class="modal-content bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h3 id="modal-title" class="text-xl font-semibold mb-4">Enter a title</h3>
+            <input id="modal-input" type="text" class="w-full border-gray-300 rounded-md shadow-sm p-2 mb-4" placeholder="Title...">
+            <div class="flex justify-end gap-3">
+                <button id="modal-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button id="modal-ok-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for confirmation (replaces confirm) -->
+    <div id="confirm-modal" class="modal-backdrop fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden">
+        <div class="modal-content bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h3 id="confirm-modal-title" class="text-xl font-semibold mb-4">Are you sure?</h3>
+            <p id="confirm-modal-text" class="text-gray-600 mb-6">Do you really want to delete this item?</p>
+            <div class="flex justify-end gap-3">
+                <button id="confirm-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button id="confirm-ok-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const kanbanBoard = document.getElementById('kanban-board');
+            const addLaneBtn = document.getElementById('add-lane-btn');
+            const exportCsvBtn = document.getElementById('export-csv-btn');
+            const exportSheetBtn = document.getElementById('export-sheet-btn');
+            
+            // Modal elements
+            const inputModal = document.getElementById('input-modal');
+            const modalTitle = document.getElementById('modal-title');
+            const modalInput = document.getElementById('modal-input');
+            const modalOkBtn = document.getElementById('modal-ok-btn');
+            const modalCancelBtn = document.getElementById('modal-cancel-btn');
+
+            const confirmModal = document.getElementById('confirm-modal');
+            const confirmModalText = document.getElementById('confirm-modal-text');
+            const confirmOkBtn = document.getElementById('confirm-ok-btn');
+            const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+
+            let draggedCard = null;
+            let onOk; // Callback for modal confirmation
+
+            /**
+             * Debounce function to limit the rate at which a function gets called.
+             * @param {Function} func The function to debounce.
+             * @param {number} delay The delay in milliseconds.
+             * @returns {Function} The debounced function.
+             */
+            const debounce = (func, delay) => {
+                let timeoutId;
+                return (...args) => {
+                    clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => {
+                        func.apply(this, args);
+                    }, delay);
+                };
+            };
+
+            /**
+             * Saves the entire board state to localStorage.
+             */
+            const saveState = () => {
+                const lanes = [];
+                document.querySelectorAll('.lane').forEach(laneEl => {
+                    const laneTitle = laneEl.querySelector('.lane-title').textContent;
+                    const cards = [];
+                    laneEl.querySelectorAll('.card span').forEach(cardSpan => {
+                        cards.push(cardSpan.textContent);
+                    });
+                    lanes.push({ title: laneTitle, cards: cards });
+                });
+                localStorage.setItem('kanbanBoardState', JSON.stringify(lanes));
+                console.log('Board state saved.');
+            };
+
+            const debouncedSave = debounce(saveState, 500);
+
+            /**
+             * Copies the current board state to clipboard as CSV
+             */
+            const exportToCSV = async () => {
+                const csvRows = [];
+                
+                // Add header row
+                csvRows.push(['Lane', 'Card']);
+                
+                // Collect data from all lanes
+                document.querySelectorAll('.lane').forEach(laneEl => {
+                    const laneTitle = laneEl.querySelector('.lane-title').textContent.trim();
+                    const cards = laneEl.querySelectorAll('.card span');
+                    
+                    if (cards.length === 0) {
+                        // Add lane even if it has no cards
+                        csvRows.push([laneTitle, '']);
+                    } else {
+                        cards.forEach(cardSpan => {
+                            const cardText = cardSpan.textContent.trim();
+                            csvRows.push([laneTitle, cardText]);
+                        });
+                    }
+                });
+                
+                // Convert to CSV format
+                const csvContent = csvRows.map(row => 
+                    row.map(field => `"${field.replace(/"/g, '""')}"`)
+                       .join(',')
+                ).join('\n');
+                
+                // Copy to clipboard
+                try {
+                    await navigator.clipboard.writeText(csvContent);
+                    
+                    // Show temporary success feedback
+                    const button = document.getElementById('export-csv-btn');
+                    const originalText = button.innerHTML;
+                    button.innerHTML = '✅ Copied to Clipboard!';
+                    button.classList.remove('bg-green-600', 'hover:bg-green-700');
+                    button.classList.add('bg-green-800');
+                    
+                    setTimeout(() => {
+                        button.innerHTML = originalText;
+                        button.classList.remove('bg-green-800');
+                        button.classList.add('bg-green-600', 'hover:bg-green-700');
+                    }, 2000);
+                    
+                    console.log('Board CSV data copied to clipboard successfully.');
+                } catch (err) {
+                    console.error('Failed to copy to clipboard:', err);
+                    // Fallback: show the CSV in a modal or alert
+                    alert('Failed to copy to clipboard. Here is the CSV data:\n\n' + csvContent);
+                }
+            };
+
+            /**
+             * Copies the current board state to clipboard in structured sheet format
+             */
+            const exportToSheetFormat = async () => {
+                const lanes = [];
+                const maxCards = Math.max(...Array.from(document.querySelectorAll('.lane')).map(lane => 
+                    lane.querySelectorAll('.card').length
+                ));
+                
+                // Collect data from all lanes
+                document.querySelectorAll('.lane').forEach(laneEl => {
+                    const laneTitle = laneEl.querySelector('.lane-title').textContent.trim();
+                    const cards = [];
+                    laneEl.querySelectorAll('.card span').forEach(cardSpan => {
+                        cards.push(cardSpan.textContent.trim());
+                    });
+                    lanes.push({ title: laneTitle, cards: cards });
+                });
+                
+                // Build the structured format
+                const sheetRows = [];
+                
+                // Add lane titles as headers
+                const headers = lanes.map(lane => lane.title);
+                sheetRows.push(headers);
+                
+                // Add cards row by row
+                for (let i = 0; i < maxCards; i++) {
+                    const row = lanes.map(lane => lane.cards[i] || '');
+                    sheetRows.push(row);
+                }
+                
+                // Convert to tab-separated format (better for spreadsheets)
+                const sheetContent = sheetRows.map(row => 
+                    row.map(field => field.replace(/\t/g, ' ').replace(/\n/g, ' '))
+                       .join('\t')
+                ).join('\n');
+                
+                // Copy to clipboard
+                try {
+                    await navigator.clipboard.writeText(sheetContent);
+                    
+                    // Show temporary success feedback
+                    const button = document.getElementById('export-sheet-btn');
+                    const originalText = button.innerHTML;
+                    button.innerHTML = '✅ Copied Sheet Format!';
+                    button.classList.remove('bg-purple-600', 'hover:bg-purple-700');
+                    button.classList.add('bg-purple-800');
+                    
+                    setTimeout(() => {
+                        button.innerHTML = originalText;
+                        button.classList.remove('bg-purple-800');
+                        button.classList.add('bg-purple-600', 'hover:bg-purple-700');
+                    }, 2000);
+                    
+                    console.log('Board sheet format data copied to clipboard successfully.');
+                } catch (err) {
+                    console.error('Failed to copy to clipboard:', err);
+                    // Fallback: show the data in a modal or alert
+                    alert('Failed to copy to clipboard. Here is the sheet format data:\n\n' + sheetContent);
+                }
+            };
+
+            /**
+             * Loads the board state from localStorage.
+             * @returns {boolean} True if state was loaded, false otherwise.
+             */
+            const loadState = () => {
+                const savedState = localStorage.getItem('kanbanBoardState');
+                if (!savedState) return false;
+
+                const lanes = JSON.parse(savedState);
+                if (lanes.length === 0) return false;
+
+                // Clear the board before loading
+                kanbanBoard.innerHTML = '';
+
+                lanes.forEach(laneData => {
+                    addLane(laneData.title, false); // Add lane without saving
+                    const newLane = kanbanBoard.lastElementChild;
+                    if (newLane) {
+                        laneData.cards.forEach(cardText => {
+                            addCard(newLane, cardText, false); // Add card without saving
+                        });
+                    }
+                });
+                console.log('Board state loaded.');
+                return true;
+            };
+
+            const showInputModal = (title, callback) => {
+                modalTitle.textContent = title;
+                modalInput.value = '';
+                inputModal.classList.remove('hidden');
+                modalInput.focus();
+                onOk = () => {
+                    const value = modalInput.value.trim();
+                    if (value) {
+                        callback(value);
+                        hideInputModal();
+                    }
+                };
+            };
+
+            const hideInputModal = () => inputModal.classList.add('hidden');
+            modalOkBtn.addEventListener('click', () => onOk());
+            modalCancelBtn.addEventListener('click', hideInputModal);
+            modalInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') onOk();
+                if (e.key === 'Escape') hideInputModal();
+            });
+
+            const showConfirmModal = (text, callback) => {
+                confirmModalText.textContent = text;
+                confirmModal.classList.remove('hidden');
+                onOk = () => {
+                    callback();
+                    hideConfirmModal();
+                };
+            };
+
+            const hideConfirmModal = () => confirmModal.classList.add('hidden');
+            confirmOkBtn.addEventListener('click', () => onOk());
+            confirmCancelBtn.addEventListener('click', hideConfirmModal);
+
+            const addLane = (title = 'New Lane', shouldSave = true) => {
+                const lane = document.createElement('div');
+                lane.className = 'lane bg-gray-200 rounded-lg p-4 w-80 flex-shrink-0 shadow-sm';
+                lane.innerHTML = `
+                    <div class="lane-header flex justify-between items-center mb-4">
+                        <h2 class="lane-title text-lg font-semibold text-gray-700" contenteditable="true">${title}</h2>
+                        <button class="delete-lane-btn text-gray-500 hover:text-red-600 text-xl font-bold" title="Delete Lane">&times;</button>
+                    </div>
+                    <div class="cards min-h-[100px] flex flex-col gap-3"></div>
+                    <button class="add-card-btn w-full mt-4 text-left text-gray-600 hover:bg-gray-300 p-2 rounded-md transition-colors duration-200">&#43; Add Card</button>
+                `;
+                kanbanBoard.appendChild(lane);
+                setupLaneEventListeners(lane);
+                if (shouldSave) debouncedSave();
+            };
+
+            const addCard = (lane, text = 'New Card', shouldSave = true) => {
+                const cardsContainer = lane.querySelector('.cards');
+                const card = document.createElement('div');
+                card.className = 'card bg-white rounded-md p-3 shadow-md cursor-grab active:cursor-grabbing flex justify-between items-center';
+                card.draggable = true;
+                card.innerHTML = `
+                    <span contenteditable="true">${text}</span>
+                    <button class="delete-card-btn text-gray-400 hover:text-red-500" title="Delete Card">🗑️</button>
+                `;
+                cardsContainer.appendChild(card);
+                setupCardEventListeners(card);
+                if (shouldSave) debouncedSave();
+            };
+
+            const setupLaneEventListeners = (lane) => {
+                const titleEl = lane.querySelector('.lane-title');
+                titleEl.addEventListener('blur', debouncedSave);
+
+                lane.querySelector('.delete-lane-btn').addEventListener('click', () => {
+                    showConfirmModal('Are you sure you want to delete this lane and all its cards?', () => {
+                        lane.remove();
+                        debouncedSave();
+                    });
+                });
+
+                lane.querySelector('.add-card-btn').addEventListener('click', () => {
+                    showInputModal('Enter card text:', (cardText) => {
+                        addCard(lane, cardText);
+                    });
+                });
+
+                const cardsContainer = lane.querySelector('.cards');
+                cardsContainer.addEventListener('dragover', (e) => e.preventDefault());
+                cardsContainer.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    if (draggedCard) {
+                        cardsContainer.appendChild(draggedCard);
+                        debouncedSave();
+                    }
+                });
+            };
+
+            const setupCardEventListeners = (card) => {
+                const cardTextEl = card.querySelector('span');
+                cardTextEl.addEventListener('blur', debouncedSave);
+
+                card.querySelector('.delete-card-btn').addEventListener('click', () => {
+                    showConfirmModal('Are you sure you want to delete this card?', () => {
+                        card.remove();
+                        debouncedSave();
+                    });
+                });
+
+                card.addEventListener('dragstart', () => {
+                    draggedCard = card;
+                    setTimeout(() => card.classList.add('dragging'), 0);
+                });
+
+                card.addEventListener('dragend', () => {
+                    card.classList.remove('dragging');
+                    draggedCard = null;
+                });
+            };
+
+            // --- INITIALIZATION ---
+
+            addLaneBtn.addEventListener('click', () => {
+                showInputModal('Enter new lane title:', (laneTitle) => {
+                    addLane(laneTitle);
+                });
+            });
+
+            exportCsvBtn.addEventListener('click', exportToCSV);
+
+            exportSheetBtn.addEventListener('click', exportToSheetFormat);
+
+            // Try to load state from localStorage, if it fails, load default data.
+            if (!loadState()) {
+                const defaultLanes = {
+                    'To Do': ['Complete project proposal 📑', 'Schedule team meeting 📅'],
+                    'In Progress': ['Develop the main feature 👨‍💻'],
+                    'Done': ['Deploy to production ✨']
+                };
+
+                Object.entries(defaultLanes).forEach(([title, cards]) => {
+                    addLane(title, false); // Don't save on initial setup
+                    const newLane = kanbanBoard.lastElementChild;
+                    if (newLane) {
+                        cards.forEach(cardText => addCard(newLane, cardText, false));
+                    }
+                });
+                // Save the initial default state
+                saveState();
+            }
+        });
+    </script>
+
+</body>
+</html>
