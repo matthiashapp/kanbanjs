@@ -437,6 +437,29 @@
                 timeLogModal.classList.remove('hidden');
             };
 
+            const restoreTrackingState = () => {
+                // Find any card that was being tracked before reload
+                for (const cardId in cardTimeData) {
+                    const timeData = cardTimeData[cardId];
+                    if (timeData.isTracking) {
+                        const cardEl = document.querySelector(`[data-card-id="${cardId}"]`);
+                        if (cardEl) {
+                            // Restore visual state
+                            cardEl.classList.add('time-tracking-active');
+                            currentTrackingCard = cardId;
+                            
+                            // Start the tracking interval
+                            if (trackingInterval) clearInterval(trackingInterval);
+                            trackingInterval = setInterval(() => updateTrackingDisplay(), 1000);
+                            
+                            // Update display immediately
+                            updateTrackingDisplay();
+                            break; // Only one card should be tracking at a time
+                        }
+                    }
+                }
+            };
+
             /**
              * Copies the current board state to clipboard as CSV
              */
@@ -888,11 +911,14 @@
                 saveState();
             }
 
-            // Update existing cards without IDs
+            // Update existing cards without IDs and restore tracking state
             document.querySelectorAll('.card:not([data-card-id])').forEach(card => {
                 card.dataset.cardId = generateCardId();
                 updateCardTimeDisplay(card, card.dataset.cardId);
             });
+
+            // Restore tracking state after loading
+            restoreTrackingState();
         });
     </script>
 
