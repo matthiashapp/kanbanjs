@@ -46,6 +46,47 @@
         .modal-backdrop {
             transition: opacity 0.3s ease;
         }
+        /* Styles for time tracking */
+        .time-display {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+        .time-tracking-active {
+            background: linear-gradient(90deg, #fef3c7, #fef3c7 50%, transparent 50%);
+            background-size: 20px 20px;
+            animation: time-pulse 2s linear infinite;
+        }
+        @keyframes time-pulse {
+            0% { background-position: 0 0; }
+            100% { background-position: 20px 0; }
+        }
+        /* Context menu styles */
+        .context-menu {
+            position: fixed;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            padding: 0.5rem 0;
+            min-width: 160px;
+        }
+        .context-menu-item {
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+        }
+        .context-menu-item:hover {
+            background-color: #f3f4f6;
+        }
+        .context-menu-item.disabled {
+            color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .context-menu-item.disabled:hover {
+            background-color: transparent;
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -98,6 +139,28 @@
         </div>
     </div>
 
+    <!-- Context menu for time tracking -->
+    <div id="context-menu" class="context-menu hidden">
+        <div id="start-timer" class="context-menu-item">⏱️ Start Timer</div>
+        <div id="pause-timer" class="context-menu-item disabled">⏸️ Pause Timer</div>
+        <div id="stop-timer" class="context-menu-item disabled">⏹️ Stop Timer</div>
+        <div id="reset-timer" class="context-menu-item">🔄 Reset Time</div>
+        <div id="view-time-log" class="context-menu-item">📊 View Time Log</div>
+    </div>
+
+    <!-- Time log modal -->
+    <div id="time-log-modal" class="modal-backdrop fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden">
+        <div class="modal-content bg-white p-6 rounded-lg shadow-xl w-full max-w-lg">
+            <h3 class="text-xl font-semibold mb-4">Time Log</h3>
+            <div id="time-log-content" class="max-h-60 overflow-y-auto mb-4">
+                <!-- Time log entries will be populated here -->
+            </div>
+            <div class="flex justify-end">
+                <button id="time-log-close-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Close</button>
+            </div>
+        </div>
+    </div>
+
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -118,8 +181,28 @@
             const confirmOkBtn = document.getElementById('confirm-ok-btn');
             const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
 
+            // Time tracking elements
+            const contextMenu = document.getElementById('context-menu');
+            const timeLogModal = document.getElementById('time-log-modal');
+            const timeLogContent = document.getElementById('time-log-content');
+            const timeLogCloseBtn = document.getElementById('time-log-close-btn');
+
             let draggedCard = null;
             let onOk; // Callback for modal confirmation
+            let currentTrackingCard = null;
+            let trackingInterval = null;
+            let contextMenuCard = null;
+
+            // Time tracking data structure
+            // cardTimeData = {
+            //   cardId: {
+            //     totalTime: 0, // in milliseconds
+            //     isTracking: false,
+            //     startTime: null,
+            //     sessions: [{ start: timestamp, end: timestamp, duration: ms }]
+            //   }
+            // }
+            let cardTimeData = {};
 
             /**
              * Debounce function to limit the rate at which a function gets called.
@@ -145,16 +228,214 @@
                 document.querySelectorAll('.lane').forEach(laneEl => {
                     const laneTitle = laneEl.querySelector('.lane-title').textContent;
                     const cards = [];
-                    laneEl.querySelectorAll('.card span').forEach(cardSpan => {
-                        cards.push(cardSpan.textContent);
+                    laneEl.querySelectorAll('.card').forEach(cardEl => {
+                        const cardId = cardEl.dataset.cardId;
+                        const cardText = cardEl.querySelector('span').textContent;
+                        cards.push({ 
+                            id: cardId,
+                            text: cardText 
+                        });
                     });
                     lanes.push({ title: laneTitle, cards: cards });
                 });
-                localStorage.setItem('kanbanBoardState', JSON.stringify(lanes));
+                
+                const state = {
+                    lanes: lanes,
+                    timeData: cardTimeData
+                };
+                
+                localStorage.setItem('kanbanBoardState', JSON.stringify(state));
                 console.log('Board state saved.');
             };
 
             const debouncedSave = debounce(saveState, 500);
+
+            /**
+             * Time tracking utility functions
+             */
+            const generateCardId = () => {
+                return 'card_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            };
+
+            const formatTime = (milliseconds) => {
+                const totalSeconds = Math.floor(milliseconds / 1000);
+                const hours = Math.floor(totalSeconds / 3600);
+                const minutes = Math.floor((totalSeconds % 3600) / 60);
+                const seconds = totalSeconds % 60;
+
+                if (hours > 0) {
+                    return `${hours}h ${minutes}m ${seconds}s`;
+                } else if (minutes > 0) {
+                    return `${minutes}m ${seconds}s`;
+                } else {
+                    return `${seconds}s`;
+                }
+            };
+
+            const initializeCardTimeData = (cardId) => {
+                if (!cardTimeData[cardId]) {
+                    cardTimeData[cardId] = {
+                        totalTime: 0,
+                        isTracking: false,
+                        startTime: null,
+                        sessions: []
+                    };
+                }
+            };
+
+            const startTracking = (cardId) => {
+                // Stop any currently tracking card
+                if (currentTrackingCard && currentTrackingCard !== cardId) {
+                    stopTracking(currentTrackingCard);
+                }
+
+                initializeCardTimeData(cardId);
+                const timeData = cardTimeData[cardId];
+                
+                if (!timeData.isTracking) {
+                    timeData.isTracking = true;
+                    timeData.startTime = Date.now();
+                    currentTrackingCard = cardId;
+                    
+                    const cardEl = document.querySelector(`[data-card-id="${cardId}"]`);
+                    if (cardEl) {
+                        cardEl.classList.add('time-tracking-active');
+                    }
+                    
+                    // Start interval to update display
+                    if (trackingInterval) clearInterval(trackingInterval);
+                    trackingInterval = setInterval(() => updateTrackingDisplay(), 1000);
+                    
+                    updateTrackingDisplay();
+                    debouncedSave();
+                }
+            };
+
+            const pauseTracking = (cardId) => {
+                initializeCardTimeData(cardId);
+                const timeData = cardTimeData[cardId];
+                
+                if (timeData.isTracking && timeData.startTime) {
+                    const sessionDuration = Date.now() - timeData.startTime;
+                    timeData.totalTime += sessionDuration;
+                    timeData.sessions.push({
+                        start: timeData.startTime,
+                        end: Date.now(),
+                        duration: sessionDuration
+                    });
+                    
+                    timeData.isTracking = false;
+                    timeData.startTime = null;
+                    currentTrackingCard = null;
+                    
+                    const cardEl = document.querySelector(`[data-card-id="${cardId}"]`);
+                    if (cardEl) {
+                        cardEl.classList.remove('time-tracking-active');
+                        updateCardTimeDisplay(cardEl, cardId);
+                    }
+                    
+                    if (trackingInterval) {
+                        clearInterval(trackingInterval);
+                        trackingInterval = null;
+                    }
+                    
+                    debouncedSave();
+                }
+            };
+
+            const stopTracking = (cardId) => {
+                pauseTracking(cardId); // Same as pause for now
+            };
+
+            const resetTime = (cardId) => {
+                if (cardTimeData[cardId]) {
+                    if (cardTimeData[cardId].isTracking) {
+                        stopTracking(cardId);
+                    }
+                    
+                    cardTimeData[cardId] = {
+                        totalTime: 0,
+                        isTracking: false,
+                        startTime: null,
+                        sessions: []
+                    };
+                    
+                    const cardEl = document.querySelector(`[data-card-id="${cardId}"]`);
+                    if (cardEl) {
+                        updateCardTimeDisplay(cardEl, cardId);
+                    }
+                    
+                    debouncedSave();
+                }
+            };
+
+            const updateTrackingDisplay = () => {
+                if (currentTrackingCard) {
+                    const cardEl = document.querySelector(`[data-card-id="${currentTrackingCard}"]`);
+                    if (cardEl) {
+                        updateCardTimeDisplay(cardEl, currentTrackingCard);
+                    }
+                }
+            };
+
+            const updateCardTimeDisplay = (cardEl, cardId) => {
+                initializeCardTimeData(cardId);
+                const timeData = cardTimeData[cardId];
+                
+                let currentTime = timeData.totalTime;
+                if (timeData.isTracking && timeData.startTime) {
+                    currentTime += Date.now() - timeData.startTime;
+                }
+                
+                let timeDisplay = cardEl.querySelector('.time-display');
+                if (!timeDisplay) {
+                    timeDisplay = document.createElement('div');
+                    timeDisplay.className = 'time-display';
+                    cardEl.appendChild(timeDisplay);
+                }
+                
+                if (currentTime > 0) {
+                    timeDisplay.textContent = `⏱️ ${formatTime(currentTime)}`;
+                    timeDisplay.style.display = 'block';
+                } else {
+                    timeDisplay.style.display = 'none';
+                }
+            };
+
+            const showTimeLog = (cardId) => {
+                initializeCardTimeData(cardId);
+                const timeData = cardTimeData[cardId];
+                
+                let logHtml = '';
+                if (timeData.sessions.length === 0) {
+                    logHtml = '<p class="text-gray-500 text-center">No time sessions recorded yet.</p>';
+                } else {
+                    logHtml = '<div class="space-y-2">';
+                    timeData.sessions.forEach((session, index) => {
+                        const startDate = new Date(session.start);
+                        const endDate = new Date(session.end);
+                        logHtml += `
+                            <div class="bg-gray-50 p-3 rounded-md">
+                                <div class="font-semibold">Session ${index + 1}</div>
+                                <div class="text-sm text-gray-600">
+                                    ${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString()} - 
+                                    ${endDate.toLocaleTimeString()}
+                                </div>
+                                <div class="text-sm font-medium">Duration: ${formatTime(session.duration)}</div>
+                            </div>
+                        `;
+                    });
+                    logHtml += `
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-200">
+                            <div class="font-semibold">Total Time: ${formatTime(timeData.totalTime)}</div>
+                        </div>
+                    `;
+                }
+                
+                timeLogContent.innerHTML = logHtml;
+                timeLogModal.classList.remove('hidden');
+            };
 
             /**
              * Copies the current board state to clipboard as CSV
@@ -163,27 +444,40 @@
                 const csvRows = [];
                 
                 // Add header row
-                csvRows.push(['Lane', 'Card']);
+                csvRows.push(['Lane', 'Card', 'Total Time', 'Sessions']);
                 
                 // Collect data from all lanes
                 document.querySelectorAll('.lane').forEach(laneEl => {
                     const laneTitle = laneEl.querySelector('.lane-title').textContent.trim();
-                    const cards = laneEl.querySelectorAll('.card span');
+                    const cards = laneEl.querySelectorAll('.card');
                     
                     if (cards.length === 0) {
                         // Add lane even if it has no cards
-                        csvRows.push([laneTitle, '']);
+                        csvRows.push([laneTitle, '', '', '']);
                     } else {
-                        cards.forEach(cardSpan => {
-                            const cardText = cardSpan.textContent.trim();
-                            csvRows.push([laneTitle, cardText]);
+                        cards.forEach(cardEl => {
+                            const cardText = cardEl.querySelector('span').textContent.trim();
+                            const cardId = cardEl.dataset.cardId;
+                            
+                            initializeCardTimeData(cardId);
+                            const timeData = cardTimeData[cardId];
+                            
+                            let totalTime = timeData.totalTime;
+                            if (timeData.isTracking && timeData.startTime) {
+                                totalTime += Date.now() - timeData.startTime;
+                            }
+                            
+                            const formattedTime = totalTime > 0 ? formatTime(totalTime) : '';
+                            const sessionCount = timeData.sessions.length;
+                            
+                            csvRows.push([laneTitle, cardText, formattedTime, sessionCount]);
                         });
                     }
                 });
                 
                 // Convert to CSV format
                 const csvContent = csvRows.map(row => 
-                    row.map(field => `"${field.replace(/"/g, '""')}"`)
+                    row.map(field => `"${field.toString().replace(/"/g, '""')}"`)
                        .join(',')
                 ).join('\n');
                 
@@ -225,8 +519,20 @@
                 document.querySelectorAll('.lane').forEach(laneEl => {
                     const laneTitle = laneEl.querySelector('.lane-title').textContent.trim();
                     const cards = [];
-                    laneEl.querySelectorAll('.card span').forEach(cardSpan => {
-                        cards.push(cardSpan.textContent.trim());
+                    laneEl.querySelectorAll('.card').forEach(cardEl => {
+                        const cardText = cardEl.querySelector('span').textContent.trim();
+                        const cardId = cardEl.dataset.cardId;
+                        
+                        initializeCardTimeData(cardId);
+                        const timeData = cardTimeData[cardId];
+                        
+                        let totalTime = timeData.totalTime;
+                        if (timeData.isTracking && timeData.startTime) {
+                            totalTime += Date.now() - timeData.startTime;
+                        }
+                        
+                        const formattedTime = totalTime > 0 ? formatTime(totalTime) : '';
+                        cards.push(`${cardText}${formattedTime ? ' (' + formattedTime + ')' : ''}`);
                     });
                     lanes.push({ title: laneTitle, cards: cards });
                 });
@@ -283,23 +589,44 @@
                 const savedState = localStorage.getItem('kanbanBoardState');
                 if (!savedState) return false;
 
-                const lanes = JSON.parse(savedState);
-                if (lanes.length === 0) return false;
-
-                // Clear the board before loading
-                kanbanBoard.innerHTML = '';
-
-                lanes.forEach(laneData => {
-                    addLane(laneData.title, false); // Add lane without saving
-                    const newLane = kanbanBoard.lastElementChild;
-                    if (newLane) {
-                        laneData.cards.forEach(cardText => {
-                            addCard(newLane, cardText, false); // Add card without saving
-                        });
+                try {
+                    const state = JSON.parse(savedState);
+                    
+                    // Handle legacy format (array of lanes) or new format (object with lanes and timeData)
+                    let lanes;
+                    if (Array.isArray(state)) {
+                        lanes = state;
+                        cardTimeData = {};
+                    } else {
+                        lanes = state.lanes || [];
+                        cardTimeData = state.timeData || {};
                     }
-                });
-                console.log('Board state loaded.');
-                return true;
+                    
+                    if (lanes.length === 0) return false;
+
+                    // Clear the board before loading
+                    kanbanBoard.innerHTML = '';
+
+                    lanes.forEach(laneData => {
+                        addLane(laneData.title, false); // Add lane without saving
+                        const newLane = kanbanBoard.lastElementChild;
+                        if (newLane) {
+                            laneData.cards.forEach(cardData => {
+                                // Handle legacy format (string) or new format (object)
+                                if (typeof cardData === 'string') {
+                                    addCard(newLane, cardData, false);
+                                } else {
+                                    addCard(newLane, cardData.text, false, cardData.id);
+                                }
+                            });
+                        }
+                    });
+                    console.log('Board state loaded.');
+                    return true;
+                } catch (error) {
+                    console.error('Error loading state:', error);
+                    return false;
+                }
             };
 
             const showInputModal = (title, callback) => {
@@ -337,6 +664,97 @@
             confirmOkBtn.addEventListener('click', () => onOk());
             confirmCancelBtn.addEventListener('click', hideConfirmModal);
 
+            // Context menu functions
+            const showContextMenu = (x, y, cardId) => {
+                initializeCardTimeData(cardId);
+                const timeData = cardTimeData[cardId];
+                
+                // Update menu item states
+                const startTimer = document.getElementById('start-timer');
+                const pauseTimer = document.getElementById('pause-timer');
+                const stopTimer = document.getElementById('stop-timer');
+                const resetTimer = document.getElementById('reset-timer');
+                
+                if (timeData.isTracking) {
+                    startTimer.classList.add('disabled');
+                    pauseTimer.classList.remove('disabled');
+                    stopTimer.classList.remove('disabled');
+                } else {
+                    startTimer.classList.remove('disabled');
+                    pauseTimer.classList.add('disabled');
+                    stopTimer.classList.add('disabled');
+                }
+                
+                // Position and show context menu
+                contextMenu.style.left = x + 'px';
+                contextMenu.style.top = y + 'px';
+                contextMenu.classList.remove('hidden');
+                
+                // Adjust position if menu goes off screen
+                const rect = contextMenu.getBoundingClientRect();
+                if (rect.right > window.innerWidth) {
+                    contextMenu.style.left = (x - rect.width) + 'px';
+                }
+                if (rect.bottom > window.innerHeight) {
+                    contextMenu.style.top = (y - rect.height) + 'px';
+                }
+            };
+
+            const hideContextMenu = () => {
+                contextMenu.classList.add('hidden');
+                contextMenuCard = null;
+            };
+
+            // Context menu event listeners
+            document.getElementById('start-timer').addEventListener('click', () => {
+                if (contextMenuCard && !document.getElementById('start-timer').classList.contains('disabled')) {
+                    startTracking(contextMenuCard);
+                }
+                hideContextMenu();
+            });
+
+            document.getElementById('pause-timer').addEventListener('click', () => {
+                if (contextMenuCard && !document.getElementById('pause-timer').classList.contains('disabled')) {
+                    pauseTracking(contextMenuCard);
+                }
+                hideContextMenu();
+            });
+
+            document.getElementById('stop-timer').addEventListener('click', () => {
+                if (contextMenuCard && !document.getElementById('stop-timer').classList.contains('disabled')) {
+                    stopTracking(contextMenuCard);
+                }
+                hideContextMenu();
+            });
+
+            document.getElementById('reset-timer').addEventListener('click', () => {
+                if (contextMenuCard) {
+                    showConfirmModal('Are you sure you want to reset the time for this card?', () => {
+                        resetTime(contextMenuCard);
+                    });
+                }
+                hideContextMenu();
+            });
+
+            document.getElementById('view-time-log').addEventListener('click', () => {
+                if (contextMenuCard) {
+                    showTimeLog(contextMenuCard);
+                }
+                hideContextMenu();
+            });
+
+            // Time log modal event listeners
+            timeLogCloseBtn.addEventListener('click', () => {
+                timeLogModal.classList.add('hidden');
+            });
+
+            // Hide context menu when clicking elsewhere
+            document.addEventListener('click', (e) => {
+                if (!contextMenu.contains(e.target) && !e.target.closest('.card')) {
+                    hideContextMenu();
+                }
+            });
+
             const addLane = (title = 'New Lane', shouldSave = true) => {
                 const lane = document.createElement('div');
                 lane.className = 'lane bg-gray-200 rounded-lg p-4 w-80 flex-shrink-0 shadow-sm';
@@ -353,17 +771,23 @@
                 if (shouldSave) debouncedSave();
             };
 
-            const addCard = (lane, text = 'New Card', shouldSave = true) => {
+            const addCard = (lane, text = 'New Card', shouldSave = true, cardId = null) => {
                 const cardsContainer = lane.querySelector('.cards');
                 const card = document.createElement('div');
-                card.className = 'card bg-white rounded-md p-3 shadow-md cursor-grab active:cursor-grabbing flex justify-between items-center';
+                const id = cardId || generateCardId();
+                
+                card.className = 'card bg-white rounded-md p-3 shadow-md cursor-grab active:cursor-grabbing';
                 card.draggable = true;
+                card.dataset.cardId = id;
                 card.innerHTML = `
-                    <span contenteditable="true">${text}</span>
-                    <button class="delete-card-btn text-gray-400 hover:text-red-500" title="Delete Card">🗑️</button>
+                    <div class="flex justify-between items-start">
+                        <span contenteditable="true" class="flex-1">${text}</span>
+                        <button class="delete-card-btn text-gray-400 hover:text-red-500 ml-2" title="Delete Card">🗑️</button>
+                    </div>
                 `;
                 cardsContainer.appendChild(card);
                 setupCardEventListeners(card);
+                updateCardTimeDisplay(card, id);
                 if (shouldSave) debouncedSave();
             };
 
@@ -397,13 +821,29 @@
 
             const setupCardEventListeners = (card) => {
                 const cardTextEl = card.querySelector('span');
+                const cardId = card.dataset.cardId;
+                
                 cardTextEl.addEventListener('blur', debouncedSave);
 
-                card.querySelector('.delete-card-btn').addEventListener('click', () => {
+                card.querySelector('.delete-card-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
                     showConfirmModal('Are you sure you want to delete this card?', () => {
+                        // Stop tracking if this card is being tracked
+                        if (currentTrackingCard === cardId) {
+                            stopTracking(cardId);
+                        }
+                        // Remove time data
+                        delete cardTimeData[cardId];
                         card.remove();
                         debouncedSave();
                     });
+                });
+
+                // Context menu for time tracking
+                card.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    contextMenuCard = cardId;
+                    showContextMenu(e.clientX, e.clientY, cardId);
                 });
 
                 card.addEventListener('dragstart', () => {
@@ -447,6 +887,12 @@
                 // Save the initial default state
                 saveState();
             }
+
+            // Update existing cards without IDs
+            document.querySelectorAll('.card:not([data-card-id])').forEach(card => {
+                card.dataset.cardId = generateCardId();
+                updateCardTimeDisplay(card, card.dataset.cardId);
+            });
         });
     </script>
 
