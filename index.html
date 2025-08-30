@@ -92,16 +92,24 @@
 <body class="bg-gray-100 text-gray-800">
 
     <div class="container mx-auto p-4 md:p-8">
-        <div class="flex justify-center mb-8 gap-4">
-            <button id="add-lane-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
-                &#43; Add New Lane
-            </button>
-            <button id="export-csv-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
-                📋 Copy CSV to Clipboard
-            </button>
-            <button id="export-sheet-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
-                📊 Copy Sheet Format
-            </button>
+        <div class="flex flex-col md:flex-row justify-center mb-8 gap-4 items-center">
+            <div class="flex gap-2 items-center">
+                <label for="project-picker" class="font-semibold text-gray-700">Project:</label>
+                <select id="project-picker" class="border rounded-md px-2 py-1 bg-white shadow-sm"></select>
+                <button id="add-project-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-1 px-3 rounded-lg shadow-md transition-transform transform hover:scale-105">+ Add Project</button>
+                <button id="remove-project-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-lg shadow-md transition-transform transform hover:scale-105">🗑️ Remove Project</button>
+            </div>
+            <div class="flex gap-2 mt-4 md:mt-0">
+                <button id="add-lane-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                    &#43; Add New Lane
+                </button>
+                <button id="export-csv-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                    📋 Copy CSV to Clipboard
+                </button>
+                <button id="export-sheet-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                    📊 Copy Sheet Format
+                </button>
+            </div>
         </div>
 
         <!-- Kanban Board Container -->
@@ -158,12 +166,16 @@
 
 
     <script>
+
         document.addEventListener('DOMContentLoaded', () => {
             const kanbanBoard = document.getElementById('kanban-board');
             const addLaneBtn = document.getElementById('add-lane-btn');
             const exportCsvBtn = document.getElementById('export-csv-btn');
             const exportSheetBtn = document.getElementById('export-sheet-btn');
-            
+            const projectPicker = document.getElementById('project-picker');
+            const addProjectBtn = document.getElementById('add-project-btn');
+            const removeProjectBtn = document.getElementById('remove-project-btn');
+
             // Modal elements
             const inputModal = document.getElementById('input-modal');
             const modalTitle = document.getElementById('modal-title');
@@ -188,16 +200,115 @@
             let trackingInterval = null;
             let contextMenuCard = null;
 
-            // Time tracking data structure
-            // cardTimeData = {
-            //   cardId: {
-            //     totalTime: 0, // in milliseconds
-            //     isTracking: false,
-            //     startTime: null,
-            //     sessions: [{ start: timestamp, end: timestamp, duration: ms }]
-            //   }
-            // }
+            // --- MULTI-PROJECT SUPPORT ---
+            // Structure: { projectName: { lanes: [...], timeData: {...} } }
+            let allProjects = {};
+            let currentProject = null;
             let cardTimeData = {};
+
+            // Load all projects from localStorage
+            const loadAllProjects = () => {
+                const raw = localStorage.getItem('kanbanProjects');
+                if (!raw) return {};
+                try {
+                    return JSON.parse(raw);
+                } catch {
+                    return {};
+                }
+            };
+
+            // Save all projects to localStorage
+            const saveAllProjects = () => {
+                localStorage.setItem('kanbanProjects', JSON.stringify(allProjects));
+            };
+
+            // Populate project picker
+            const updateProjectPicker = () => {
+                projectPicker.innerHTML = '';
+                Object.keys(allProjects).forEach(name => {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    projectPicker.appendChild(opt);
+                });
+                if (currentProject && allProjects[currentProject]) {
+                    projectPicker.value = currentProject;
+                }
+            };
+
+            // Switch project
+            const switchProject = (name) => {
+                if (!allProjects[name]) return;
+                currentProject = name;
+                cardTimeData = allProjects[name].timeData || {};
+                loadState();
+                updateProjectPicker();
+            };
+
+            // Add new project
+
+            addProjectBtn.addEventListener('click', () => {
+                showInputModal('Enter new project name:', (projectName) => {
+                    if (!allProjects[projectName]) {
+                        // Add default 3 lanes and example cards
+                        allProjects[projectName] = {
+                            lanes: [
+                                { title: 'To Do', cards: [] },
+                                { title: 'In Progress', cards: [] },
+                                { title: 'Done', cards: [] }
+                            ],
+                            timeData: {}
+                        };
+                        saveAllProjects();
+                        currentProject = projectName;
+                        cardTimeData = {};
+                        updateProjectPicker();
+                        loadState();
+                        saveState(); // Save after board is rendered
+                    } else {
+                        alert('Project already exists!');
+                    }
+                });
+            });
+
+            // Remove current project
+            removeProjectBtn.addEventListener('click', () => {
+                if (!currentProject) return;
+                // If only one project remains, ask for extra confirmation
+                const projectCount = Object.keys(allProjects).length;
+                const confirmText = projectCount === 1
+                    ? `Project "${currentProject}" is the only project. Delete it and reset the board?`
+                    : `Delete project "${currentProject}" and all its lanes & cards?`;
+                showConfirmModal(confirmText, () => {
+                    // Stop any active tracking
+                    if (currentTrackingCard) {
+                        stopTracking(currentTrackingCard);
+                    }
+                    delete allProjects[currentProject];
+                    saveAllProjects();
+                    const remaining = Object.keys(allProjects);
+                    if (remaining.length) {
+                        switchProject(remaining[0]);
+                    } else {
+                        // Create a fresh empty default project structure or leave blank board
+                        kanbanBoard.innerHTML = '';
+                        cardTimeData = {};
+                        currentProject = null;
+                        updateProjectPicker();
+                        // Optionally auto-create a new default project for convenience
+                        allProjects['Default Project'] = { lanes: [], timeData: {} };
+                        currentProject = 'Default Project';
+                        saveAllProjects();
+                        updateProjectPicker();
+                        loadState();
+                    }
+                });
+            });
+
+            // Project picker change
+            projectPicker.addEventListener('change', (e) => {
+                switchProject(e.target.value);
+            });
 
             /**
              * Debounce function to limit the rate at which a function gets called.
@@ -215,10 +326,10 @@
                 };
             };
 
-            /**
-             * Saves the entire board state to localStorage.
-             */
+
+            // Save current project state
             const saveState = () => {
+                if (!currentProject) return;
                 const lanes = [];
                 document.querySelectorAll('.lane').forEach(laneEl => {
                     const laneTitle = laneEl.querySelector('.lane-title').textContent;
@@ -233,14 +344,14 @@
                     });
                     lanes.push({ title: laneTitle, cards: cards });
                 });
-                
-                const state = {
+                allProjects[currentProject] = {
                     lanes: lanes,
                     timeData: cardTimeData
                 };
-                
-                localStorage.setItem('kanbanBoardState', JSON.stringify(state));
-                console.log('Board state saved.');
+                saveAllProjects();
+                // Also keep legacy for backward compatibility
+                localStorage.setItem('kanbanBoardState', JSON.stringify({lanes, timeData: cardTimeData}));
+                console.log('Project state saved.');
             };
 
             const debouncedSave = debounce(saveState, 500);
@@ -599,52 +710,34 @@
                 }
             };
 
-            /**
-             * Loads the board state from localStorage.
-             * @returns {boolean} True if state was loaded, false otherwise.
-             */
+
+            // Load current project state
             const loadState = () => {
-                const savedState = localStorage.getItem('kanbanBoardState');
-                if (!savedState) return false;
-
-                try {
-                    const state = JSON.parse(savedState);
-                    
-                    // Handle legacy format (array of lanes) or new format (object with lanes and timeData)
-                    let lanes;
-                    if (Array.isArray(state)) {
-                        lanes = state;
-                        cardTimeData = {};
-                    } else {
-                        lanes = state.lanes || [];
-                        cardTimeData = state.timeData || {};
+                if (!currentProject || !allProjects[currentProject]) return false;
+                const state = allProjects[currentProject];
+                if (!state || !state.lanes) return false;
+                kanbanBoard.innerHTML = '';
+                cardTimeData = state.timeData || {};
+                state.lanes.forEach(laneData => {
+                    addLane(laneData.title, false); // Add lane without saving
+                    const newLane = kanbanBoard.lastElementChild;
+                    if (newLane) {
+                        laneData.cards.forEach(cardData => {
+                            if (typeof cardData === 'string') {
+                                addCard(newLane, cardData, false);
+                            } else {
+                                addCard(newLane, cardData.text, false, cardData.id);
+                            }
+                        });
                     }
-                    
-                    if (lanes.length === 0) return false;
-
-                    // Clear the board before loading
-                    kanbanBoard.innerHTML = '';
-
-                    lanes.forEach(laneData => {
-                        addLane(laneData.title, false); // Add lane without saving
-                        const newLane = kanbanBoard.lastElementChild;
-                        if (newLane) {
-                            laneData.cards.forEach(cardData => {
-                                // Handle legacy format (string) or new format (object)
-                                if (typeof cardData === 'string') {
-                                    addCard(newLane, cardData, false);
-                                } else {
-                                    addCard(newLane, cardData.text, false, cardData.id);
-                                }
-                            });
-                        }
-                    });
-                    console.log('Board state loaded.');
-                    return true;
-                } catch (error) {
-                    console.error('Error loading state:', error);
-                    return false;
-                }
+                });
+                // Update existing cards without IDs and restore tracking state
+                document.querySelectorAll('.card:not([data-card-id])').forEach(card => {
+                    card.dataset.cardId = generateCardId();
+                    updateCardTimeDisplay(card, card.dataset.cardId);
+                });
+                restoreTrackingState();
+                return true;
             };
 
             const showInputModal = (title, callback) => {
@@ -887,33 +980,27 @@
 
             exportSheetBtn.addEventListener('click', exportToSheetFormat);
 
-            // Try to load state from localStorage, if it fails, load default data.
-            if (!loadState()) {
-                const defaultLanes = {
-                    'To Do': ['Complete project proposal 📑', 'Schedule team meeting 📅'],
-                    'In Progress': ['Develop the main feature 👨‍💻'],
-                    'Done': ['Deploy to production ✨']
+
+            // --- INITIALIZATION ---
+            // Load all projects
+            allProjects = loadAllProjects();
+            let firstProject = Object.keys(allProjects)[0];
+            if (!firstProject) {
+                // If no projects, create a default one
+                allProjects['Default Project'] = {
+                    lanes: [
+                        { title: 'To Do', cards: [ {text: 'Complete project proposal 📑', id: generateCardId()}, {text: 'Schedule team meeting 📅', id: generateCardId()} ] },
+                        { title: 'In Progress', cards: [ {text: 'Develop the main feature 👨‍💻', id: generateCardId()} ] },
+                        { title: 'Done', cards: [ {text: 'Deploy to production ✨', id: generateCardId()} ] }
+                    ],
+                    timeData: {}
                 };
-
-                Object.entries(defaultLanes).forEach(([title, cards]) => {
-                    addLane(title, false); // Don't save on initial setup
-                    const newLane = kanbanBoard.lastElementChild;
-                    if (newLane) {
-                        cards.forEach(cardText => addCard(newLane, cardText, false));
-                    }
-                });
-                // Save the initial default state
-                saveState();
+                saveAllProjects();
+                firstProject = 'Default Project';
             }
-
-            // Update existing cards without IDs and restore tracking state
-            document.querySelectorAll('.card:not([data-card-id])').forEach(card => {
-                card.dataset.cardId = generateCardId();
-                updateCardTimeDisplay(card, card.dataset.cardId);
-            });
-
-            // Restore tracking state after loading
-            restoreTrackingState();
+            currentProject = firstProject;
+            updateProjectPicker();
+            loadState();
         });
     </script>
 
