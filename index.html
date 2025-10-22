@@ -7,16 +7,44 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* Theme variables (GitHub-like) */
+        :root {
+            --bg: #f6f8fa;
+            --fg: #24292f;
+            --muted: #57606a;
+            --border: #d0d7de;
+            --lane-bg: #e5e7eb;
+            --card-bg: #ffffff;
+            --menu-bg: #ffffff;
+            --menu-hover: #f3f4f6;
+            --accent: #0969da; /* links/buttons */
+            --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+        }
+        .theme-dark :root, .theme-dark {
+            color-scheme: dark;
+            --bg: #0d1117;
+            --fg: #c9d1d9;
+            --muted: #8b949e;
+            --border: #30363d;
+            --lane-bg: #161b22;
+            --card-bg: #0d1117;
+            --menu-bg: #161b22;
+            --menu-hover: #21262d;
+            --accent: #58a6ff;
+            --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -2px rgba(0, 0, 0, 0.25);
+        }
         /* Use Inter font */
         body {
             font-family: 'Inter', sans-serif;
+            background-color: var(--bg) !important;
+            color: var(--fg) !important;
         }
         /* Custom scrollbar for a cleaner look */
         .kanban-board::-webkit-scrollbar {
             height: 8px;
         }
         .kanban-board::-webkit-scrollbar-track {
-            background: #f1f1f1;
+            background: var(--lane-bg);
             border-radius: 10px;
         }
         .kanban-board::-webkit-scrollbar-thumb {
@@ -64,10 +92,10 @@
         /* Context menu styles */
         .context-menu {
             position: fixed;
-            background: white;
-            border: 1px solid #e5e7eb;
+            background: var(--menu-bg);
+            border: 1px solid var(--border);
             border-radius: 0.5rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            box-shadow: var(--shadow);
             z-index: 1000;
             padding: 0.5rem 0;
             min-width: 160px;
@@ -76,30 +104,108 @@
             padding: 0.5rem 1rem;
             cursor: pointer;
             transition: background-color 0.15s ease;
+            color: var(--fg);
         }
         .context-menu-item:hover {
-            background-color: #f3f4f6;
+            background-color: var(--menu-hover);
         }
         .context-menu-item.disabled {
-            color: #9ca3af;
+            color: var(--muted);
             cursor: not-allowed;
         }
         .context-menu-item.disabled:hover {
             background-color: transparent;
         }
+
+        /* GitHub-style surfaces and text overrides */
+        .lane {
+            background-color: var(--lane-bg) !important;
+            border: 1px solid var(--border);
+        }
+        .lane-title { color: var(--fg) !important; }
+        .card {
+            background-color: var(--card-bg) !important;
+            color: var(--fg) !important;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+        }
+        .time-display { color: var(--muted) !important; }
+        .add-card-btn { color: var(--muted) !important; border: 1px dashed transparent; }
+        .theme-dark .add-card-btn:hover { background-color: var(--menu-hover) !important; border-color: var(--border); }
+
+        /* Modals */
+        .modal-content {
+            background-color: var(--card-bg) !important;
+            color: var(--fg) !important;
+            border: 1px solid var(--border);
+        }
+        #modal-input {
+            background-color: var(--card-bg);
+            color: var(--fg);
+            border: 1px solid var(--border);
+        }
+        /* Neutral buttons in modals */
+        #modal-cancel-btn, #time-log-close-btn {
+            background-color: transparent !important;
+            color: var(--fg) !important;
+            border: 1px solid var(--border);
+        }
+        #modal-cancel-btn:hover, #time-log-close-btn:hover {
+            background-color: var(--menu-hover) !important;
+        }
+
+        /* Inputs */
+        select, input, button {
+            outline-color: var(--accent);
+        }
+        #project-picker {
+            background-color: var(--card-bg);
+            color: var(--fg);
+            border-color: var(--border);
+        }
+
+        /* Header subtle text */
+        label[for="project-picker"] { color: var(--fg) !important; }
+        .lane-header .delete-lane-btn { color: var(--muted) !important; }
+        .lane-header .delete-lane-btn:hover { color: #f85149 !important; }
+
+        /* Theme toggle button */
+        #theme-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: transparent;
+            color: var(--fg);
+            border: 1px solid var(--border);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            box-shadow: var(--shadow);
+            transition: background-color .15s ease, border-color .15s ease, transform .1s ease;
+        }
+        #theme-toggle:hover { background-color: var(--menu-hover); }
+        #theme-toggle:active { transform: scale(0.98); }
+        #theme-toggle .icon { font-size: 1rem; }
+
+    /* Utility override helpers for dark theme (to coexist with Tailwind classes) */
+    .theme-dark .text-gray-800, .theme-dark .text-gray-700 { color: var(--fg) !important; }
+    .theme-dark .text-gray-600, .theme-dark .text-gray-500, .theme-dark .text-gray-400 { color: var(--muted) !important; }
+    .theme-dark .bg-white { background-color: var(--card-bg) !important; }
+    .theme-dark .bg-gray-50 { background-color: var(--menu-hover) !important; }
+    .theme-dark .bg-gray-100, .theme-dark .bg-gray-200 { background-color: var(--lane-bg) !important; }
+    .theme-dark .border-gray-200, .theme-dark .border-gray-300 { border-color: var(--border) !important; }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800">
+<body>
 
     <div class="container mx-auto p-4 md:p-8">
-        <div class="flex flex-col md:flex-row justify-center mb-8 gap-4 items-center">
+        <div class="flex flex-col md:flex-row justify-center md:justify-between mb-8 gap-4 items-center">
             <div class="flex gap-2 items-center">
                 <label for="project-picker" class="font-semibold text-gray-700">Project:</label>
                 <select id="project-picker" class="border rounded-md px-2 py-1 bg-white shadow-sm"></select>
                 <button id="add-project-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-1 px-3 rounded-lg shadow-md transition-transform transform hover:scale-105">+ Add Project</button>
                 <button id="remove-project-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-lg shadow-md transition-transform transform hover:scale-105">🗑️ Remove Project</button>
             </div>
-            <div class="flex gap-2 mt-4 md:mt-0">
+            <div class="flex gap-2 mt-4 md:mt-0 items-center">
                 <button id="add-lane-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
                     &#43; Add New Lane
                 </button>
@@ -108,6 +214,10 @@
                 </button>
                 <button id="export-sheet-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
                     📊 Copy Sheet Format
+                </button>
+                <button id="theme-toggle" class="ml-2" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+                    <span class="icon" id="theme-toggle-icon">🌙</span>
+                    <span id="theme-toggle-text">Dark</span>
                 </button>
             </div>
         </div>
@@ -168,6 +278,49 @@
     <script>
 
         document.addEventListener('DOMContentLoaded', () => {
+            // --- THEME SETUP ---
+            const THEME_KEY = 'kanbanTheme'; // 'light' | 'dark'
+            const themeToggleBtn = document.getElementById('theme-toggle');
+            const themeToggleIcon = document.getElementById('theme-toggle-icon');
+            const themeToggleText = document.getElementById('theme-toggle-text');
+
+            const applyTheme = (theme) => {
+                const isDark = theme === 'dark';
+                document.documentElement.classList.toggle('theme-dark', isDark);
+                // Update toggle visuals
+                if (isDark) {
+                    themeToggleIcon.textContent = '☀️';
+                    themeToggleText.textContent = 'Light';
+                    themeToggleBtn.setAttribute('aria-label', 'Switch to light mode');
+                    themeToggleBtn.title = 'Switch to light mode';
+                } else {
+                    themeToggleIcon.textContent = '🌙';
+                    themeToggleText.textContent = 'Dark';
+                    themeToggleBtn.setAttribute('aria-label', 'Switch to dark mode');
+                    themeToggleBtn.title = 'Switch to dark mode';
+                }
+                // Optional: set theme-color for mobile address bar
+                const themeColor = document.querySelector('meta[name="theme-color"]') || (function(){
+                    const m = document.createElement('meta'); m.name = 'theme-color'; document.head.appendChild(m); return m;})();
+                themeColor.setAttribute('content', getComputedStyle(document.body).backgroundColor);
+            };
+
+            const getPreferredTheme = () => {
+                const saved = localStorage.getItem(THEME_KEY);
+                if (saved === 'light' || saved === 'dark') return saved;
+                return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            };
+
+            let currentTheme = getPreferredTheme();
+            applyTheme(currentTheme);
+            if (themeToggleBtn) {
+                themeToggleBtn.addEventListener('click', () => {
+                    currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                    localStorage.setItem(THEME_KEY, currentTheme);
+                    applyTheme(currentTheme);
+                });
+            }
+
             const kanbanBoard = document.getElementById('kanban-board');
             const addLaneBtn = document.getElementById('add-lane-btn');
             const exportCsvBtn = document.getElementById('export-csv-btn');
@@ -870,12 +1023,14 @@
                 const lane = document.createElement('div');
                 lane.className = 'lane bg-gray-200 rounded-lg p-4 w-80 flex-shrink-0 shadow-sm';
                 lane.innerHTML = `
-                    <div class="lane-header flex justify-between items-center mb-4">
+                    <div class="lane-header flex justify-between items-center mb-2">
                         <h2 class="lane-title text-lg font-semibold text-gray-700" contenteditable="true">${title}</h2>
-                        <button class="delete-lane-btn text-gray-500 hover:text-red-600 text-xl font-bold" title="Delete Lane">&times;</button>
+                        <div class="flex items-center gap-2">
+                            <button class="add-card-btn text-left text-gray-600 hover:bg-gray-300 px-3 py-2 rounded-md transition-colors duration-200 border border-transparent">&#43; Add Card</button>
+                            <button class="delete-lane-btn text-gray-500 hover:text-red-600 text-xl font-bold" title="Delete Lane">&times;</button>
+                        </div>
                     </div>
-                    <div class="cards min-h-[100px] flex flex-col gap-3"></div>
-                    <button class="add-card-btn w-full mt-4 text-left text-gray-600 hover:bg-gray-300 p-2 rounded-md transition-colors duration-200">&#43; Add Card</button>
+                    <div class="cards min-h-[100px] max-h-[60vh] overflow-y-auto flex flex-col gap-3"></div>
                 `;
                 kanbanBoard.appendChild(lane);
                 setupLaneEventListeners(lane);
