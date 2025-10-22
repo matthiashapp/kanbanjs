@@ -18,6 +18,8 @@
             --menu-bg: #ffffff;
             --menu-hover: #f3f4f6;
             --accent: #0969da; /* links/buttons */
+            /* time tracking stripe color (light theme) - subtle warm tone */
+            --track: rgba(250, 204, 21, 0.16);
             --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
         }
         .theme-dark :root, .theme-dark {
@@ -31,6 +33,8 @@
             --menu-bg: #161b22;
             --menu-hover: #21262d;
             --accent: #58a6ff;
+            /* time tracking stripe color (dark theme) - subtle cool tone */
+            --track: rgba(88, 166, 255, 0.12);
             --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -2px rgba(0, 0, 0, 0.25);
         }
         /* Use Inter font */
@@ -81,7 +85,8 @@
             margin-top: 0.25rem;
         }
         .time-tracking-active {
-            background: linear-gradient(90deg, #fef3c7, #fef3c7 50%, transparent 50%);
+            /* Use theme-aware track color for the diagonal stripes. Fall back to a soft yellow if --track is missing. */
+            background: linear-gradient(90deg, var(--track, rgba(254,243,199,0.5)), var(--track, rgba(254,243,199,0.5)) 50%, transparent 50%);
             background-size: 20px 20px;
             animation: time-pulse 2s linear infinite;
         }
